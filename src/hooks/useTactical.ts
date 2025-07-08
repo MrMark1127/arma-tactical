@@ -1,4 +1,4 @@
-import { api } from "~/utils/api";
+import { api } from "~/trpc/react";
 import { useSession } from "next-auth/react";
 
 export function useTacticalPlans() {

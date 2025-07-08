@@ -1,4 +1,5 @@
-import { getServerAuthSession } from "~/server/auth";
+import { auth } from "~/server/auth";
+
 import { redirect } from "next/navigation";
 import dynamic from "next/dynamic";
 
@@ -13,7 +14,7 @@ interface TacticalPageProps {
 }
 
 export default async function TacticalPage({ params }: TacticalPageProps) {
-  const session = await getServerAuthSession();
+  const session = await auth();
 
   if (!session) {
     redirect("/api/auth/signin");
