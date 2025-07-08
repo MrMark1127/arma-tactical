@@ -1,14 +1,7 @@
 import { api } from "~/trpc/react";
-import { useSession } from "next-auth/react";
 
 export function useTacticalPlans() {
-  const { data: session } = useSession();
-
-  const {
-    data: plans,
-    isLoading,
-    refetch,
-  } = api.tactical.getPlans.useQuery(undefined, { enabled: !!session });
+  const { data: plans, isLoading, refetch } = api.tactical.getPlans.useQuery();
 
   const createPlanMutation = api.tactical.createPlan.useMutation({
     onSuccess: () => refetch(),
@@ -29,16 +22,11 @@ export function useTacticalPlans() {
 }
 
 export function useTacticalPlan(planId: string | undefined) {
-  const { data: session } = useSession();
-
   const {
     data: plan,
     isLoading,
     refetch,
-  } = api.tactical.getPlan.useQuery(
-    { id: planId! },
-    { enabled: !!session && !!planId },
-  );
+  } = api.tactical.getPlan.useQuery({ id: planId! }, { enabled: !!planId });
 
   const createMarkerMutation = api.tactical.createMarker.useMutation({
     onSuccess: () => refetch(),

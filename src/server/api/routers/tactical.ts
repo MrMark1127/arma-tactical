@@ -6,6 +6,10 @@ import {
 } from "~/server/api/trpc";
 import { MarkerType, RouteType, Faction } from "@prisma/client";
 
+// Create a conditional procedure that uses public in development, protected in production
+const conditionalProcedure =
+  process.env.NODE_ENV === "development" ? publicProcedure : protectedProcedure;
+
 // Input validation schemas
 const createMarkerSchema = z.object({
   planId: z.string(),
@@ -37,15 +41,41 @@ const createPlanSchema = z.object({
   mapVersion: z.string().optional(),
 });
 
+// Helper to get user ID - in dev mode, create a fake user if needed
+async function getUserId(ctx: any) {
+  if (process.env.NODE_ENV === "development" && !ctx.session?.user) {
+    // In development, create or find a demo user
+    let demoUser = await ctx.db.user.findFirst({
+      where: { email: "demo@example.com" },
+    });
+
+    if (!demoUser) {
+      demoUser = await ctx.db.user.create({
+        data: {
+          email: "demo@example.com",
+          name: "Demo User",
+        },
+      });
+    }
+
+    return demoUser.id;
+  }
+
+  return ctx.session?.user?.id;
+}
+
 export const tacticalRouter = createTRPCRouter({
   // Plan operations
-  createPlan: protectedProcedure
+  createPlan: conditionalProcedure
     .input(createPlanSchema)
     .mutation(async ({ ctx, input }) => {
+      const userId = await getUserId(ctx);
+      if (!userId) throw new Error("User not found");
+
       return ctx.db.operationPlan.create({
         data: {
           ...input,
-          userId: ctx.session.user.id,
+          userId: userId,
         },
         include: {
           markers: true,
@@ -55,14 +85,17 @@ export const tacticalRouter = createTRPCRouter({
       });
     }),
 
-  getPlans: protectedProcedure.query(async ({ ctx }) => {
+  getPlans: conditionalProcedure.query(async ({ ctx }) => {
+    const userId = await getUserId(ctx);
+    if (!userId) return [];
+
     return ctx.db.operationPlan.findMany({
       where: {
         OR: [
-          { userId: ctx.session.user.id },
+          { userId: userId },
           {
             shares: {
-              some: { userId: ctx.session.user.id },
+              some: { userId: userId },
             },
           },
         ],
@@ -81,17 +114,19 @@ export const tacticalRouter = createTRPCRouter({
     });
   }),
 
-  getPlan: protectedProcedure
+  getPlan: conditionalProcedure
     .input(z.object({ id: z.string() }))
     .query(async ({ ctx, input }) => {
+      const userId = await getUserId(ctx);
+
       const plan = await ctx.db.operationPlan.findFirst({
         where: {
           id: input.id,
           OR: [
-            { userId: ctx.session.user.id },
+            { userId: userId },
             {
               shares: {
-                some: { userId: ctx.session.user.id },
+                some: { userId: userId },
               },
             },
             { isPublic: true },
@@ -117,7 +152,7 @@ export const tacticalRouter = createTRPCRouter({
       return plan;
     }),
 
-  updatePlan: protectedProcedure
+  updatePlan: conditionalProcedure
     .input(
       z.object({
         id: z.string(),
@@ -128,41 +163,49 @@ export const tacticalRouter = createTRPCRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const { id, ...updateData } = input;
+      const userId = await getUserId(ctx);
+      if (!userId) throw new Error("User not found");
 
       return ctx.db.operationPlan.update({
         where: {
           id,
-          userId: ctx.session.user.id, // Only owner can update plan details
+          userId: userId,
         },
         data: updateData,
       });
     }),
 
-  deletePlan: protectedProcedure
+  deletePlan: conditionalProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
+      const userId = await getUserId(ctx);
+      if (!userId) throw new Error("User not found");
+
       return ctx.db.operationPlan.delete({
         where: {
           id: input.id,
-          userId: ctx.session.user.id,
+          userId: userId,
         },
       });
     }),
 
   // Marker operations
-  createMarker: protectedProcedure
+  createMarker: conditionalProcedure
     .input(createMarkerSchema)
     .mutation(async ({ ctx, input }) => {
+      const userId = await getUserId(ctx);
+      if (!userId) throw new Error("User not found");
+
       // Verify user has access to the plan
       const plan = await ctx.db.operationPlan.findFirst({
         where: {
           id: input.planId,
           OR: [
-            { userId: ctx.session.user.id },
+            { userId: userId },
             {
               shares: {
                 some: {
-                  userId: ctx.session.user.id,
+                  userId: userId,
                   canEdit: true,
                 },
               },
@@ -183,7 +226,7 @@ export const tacticalRouter = createTRPCRouter({
       });
     }),
 
-  updateMarker: protectedProcedure
+  updateMarker: conditionalProcedure
     .input(
       z.object({
         id: z.string(),
@@ -196,6 +239,7 @@ export const tacticalRouter = createTRPCRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const { id, ...updateData } = input;
+      const userId = await getUserId(ctx);
 
       // Verify access through plan ownership
       const marker = await ctx.db.tacticalMarker.findFirst({
@@ -211,10 +255,8 @@ export const tacticalRouter = createTRPCRouter({
 
       if (
         !marker ||
-        (marker.plan.userId !== ctx.session.user.id &&
-          !marker.plan.shares.some(
-            (s) => s.userId === ctx.session.user.id && s.canEdit,
-          ))
+        (marker.plan.userId !== userId &&
+          !marker.plan.shares.some((s) => s.userId === userId && s.canEdit))
       ) {
         throw new Error("Marker not found or access denied");
       }
@@ -225,9 +267,11 @@ export const tacticalRouter = createTRPCRouter({
       });
     }),
 
-  deleteMarker: protectedProcedure
+  deleteMarker: conditionalProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
+      const userId = await getUserId(ctx);
+
       // Similar access verification as updateMarker
       const marker = await ctx.db.tacticalMarker.findFirst({
         where: { id: input.id },
@@ -242,10 +286,8 @@ export const tacticalRouter = createTRPCRouter({
 
       if (
         !marker ||
-        (marker.plan.userId !== ctx.session.user.id &&
-          !marker.plan.shares.some(
-            (s) => s.userId === ctx.session.user.id && s.canEdit,
-          ))
+        (marker.plan.userId !== userId &&
+          !marker.plan.shares.some((s) => s.userId === userId && s.canEdit))
       ) {
         throw new Error("Marker not found or access denied");
       }
@@ -256,19 +298,21 @@ export const tacticalRouter = createTRPCRouter({
     }),
 
   // Route operations
-  createRoute: protectedProcedure
+  createRoute: conditionalProcedure
     .input(createRouteSchema)
     .mutation(async ({ ctx, input }) => {
+      const userId = await getUserId(ctx);
+
       // Verify plan access
       const plan = await ctx.db.operationPlan.findFirst({
         where: {
           id: input.planId,
           OR: [
-            { userId: ctx.session.user.id },
+            { userId: userId },
             {
               shares: {
                 some: {
-                  userId: ctx.session.user.id,
+                  userId: userId,
                   canEdit: true,
                 },
               },
@@ -292,7 +336,7 @@ export const tacticalRouter = createTRPCRouter({
       });
     }),
 
-  updateRoute: protectedProcedure
+  updateRoute: conditionalProcedure
     .input(
       z.object({
         id: z.string(),
@@ -317,7 +361,7 @@ export const tacticalRouter = createTRPCRouter({
       });
     }),
 
-  deleteRoute: protectedProcedure
+  deleteRoute: conditionalProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
       return ctx.db.tacticalRoute.delete({
@@ -326,7 +370,7 @@ export const tacticalRouter = createTRPCRouter({
     }),
 
   // Plan sharing
-  sharePlan: protectedProcedure
+  sharePlan: conditionalProcedure
     .input(
       z.object({
         planId: z.string(),
@@ -336,6 +380,8 @@ export const tacticalRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      const userId = await getUserId(ctx);
+
       // Find the user to share with
       const targetUser = await ctx.db.user.findUnique({
         where: { email: input.userEmail },
@@ -349,7 +395,7 @@ export const tacticalRouter = createTRPCRouter({
       const plan = await ctx.db.operationPlan.findFirst({
         where: {
           id: input.planId,
-          userId: ctx.session.user.id,
+          userId: userId,
         },
       });
 

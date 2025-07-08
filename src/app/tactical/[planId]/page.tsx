@@ -1,11 +1,6 @@
 import { auth } from "~/server/auth";
-
 import { redirect } from "next/navigation";
-import dynamic from "next/dynamic";
-
-const TacticalMap = dynamic(() => import("~/components/TacticalMap"), {
-  ssr: false,
-});
+import TacticalMapWrapper from "./TacticalMapWrapper";
 
 interface TacticalPageProps {
   params: {
@@ -16,15 +11,16 @@ interface TacticalPageProps {
 export default async function TacticalPage({ params }: TacticalPageProps) {
   const session = await auth();
 
-  if (!session) {
-    redirect("/api/auth/signin");
-  }
+  // if (!session) {
+  //   redirect("/api/auth/signin");
+  // }
 
   return (
     <main className="h-screen w-screen overflow-hidden">
-      <TacticalMap
+      <TacticalMapWrapper
         planId={params.planId}
-        mapImageUrl="/your-16k-map.webp"
+        // Update this path to match your actual image location
+        mapImageUrl="/Everon-1989-min.jpg" // Should be in public folder
         width={16384}
         height={16384}
       />

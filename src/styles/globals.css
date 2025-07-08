@@ -1,6 +1,40 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif,
+  --font-sans:
+    var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif,
     "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+}
+
+/* Optimize large tactical map images */
+.tactical-map-image {
+  /* Force browser to cache the image aggressively */
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: optimize-contrast;
+  image-rendering: crisp-edges;
+
+  /* Prevent reloading during zoom/pan */
+  will-change: transform;
+  backface-visibility: hidden;
+  transform: translateZ(0);
+
+  /* Enable hardware acceleration */
+  transform: translate3d(0, 0, 0);
+}
+
+/* Loading spinner for map */
+.map-loading {
+  backdrop-filter: blur(4px);
+}
+
+/* Optimize leaflet map container */
+.leaflet-container {
+  /* Better performance for large images */
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: optimize-contrast;
+}
+
+/* Smooth zoom transitions */
+.leaflet-zoom-anim {
+  transition: transform 0.1s ease-out;
 }
